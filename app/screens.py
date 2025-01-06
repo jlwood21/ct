@@ -6,17 +6,20 @@ from textual.binding import Binding
 import random
 import datetime
 
-# Import from our models and data modules
 from app.models import Mission, Skill, Artifact
-from app.data_manager import load_missions, save_missions
-from app.data_manager import load_skills, save_skills
-from app.data_manager import load_artifacts, save_artifacts
+from app.data_manager import (
+    load_missions, save_missions,
+    load_skills, save_skills,
+    load_artifacts, save_artifacts
+)
+from app.settings_manager import load_settings, save_settings
+from app.themes import THEMES
 
 from textual.message import Message
 from textual.reactive import var
 
 
-# -------------- NOTIFICATIONS --------------
+# ------------ NOTIFICATION MESSAGES ------------
 class MissionCompleted(Message):
     """Message posted when a mission is completed."""
     def __init__(self, sender, mission_title: str):
@@ -36,10 +39,12 @@ class ArtifactCollected(Message):
         self.artifact_name = artifact_name
 
 
-# -------------- TEMPLE GATE SCREEN --------------
+# ------------ TEMPLE GATE SCREEN ------------
 class TempleGateScreen(Screen):
-    """The main menu with options for Missions, Skill Trees, and Artifacts,
-       plus a daily cosmic event display."""
+    """
+    The main menu with options for Missions, Skill Trees, and Artifacts,
+    plus a daily cosmic event display.
+    """
 
     BINDINGS = [
         Binding("1", "goto_missions", "Go to Missions"),
@@ -49,7 +54,6 @@ class TempleGateScreen(Screen):
         Binding("b", "pop_screen", "Go back"),
     ]
 
-    # We'll store cosmic events so they're not purely placeholder
     cosmic_events = [
         "A solar flare ignites your determination.",
         "Cosmic winds blow fresh ideas your way.",
@@ -58,7 +62,6 @@ class TempleGateScreen(Screen):
     ]
 
     def compose(self) -> ComposeResult:
-        # We'll build the Temple Gate menu text
         menu_text = [
             "==========================",
             "     The Temple Gate     ",
@@ -74,16 +77,12 @@ class TempleGateScreen(Screen):
         yield Static("\n".join(menu_text), id="temple_gate_text")
 
     def on_mount(self) -> None:
-        """Show daily cosmic event, style the gate text."""
-        from app.settings_manager import load_settings, save_settings
-        from app.themes import THEMES
-
+        """Show daily cosmic event, style the gate text using app.cosmic_theme."""
         gate_text = self.query_one("#temple_gate_text", Static)
         app = self.app  # reference to CosmicTempleApp
 
-        # Style according to current theme
-        gate_text.styles.background = app.theme["background"]
-        gate_text.styles.color = app.theme["foreground"]
+        gate_text.styles.background = app.cosmic_theme["background"]
+        gate_text.styles.color = app.cosmic_theme["foreground"]
         gate_text.styles.bold = True
 
         # Show cosmic event only once per day
@@ -92,14 +91,11 @@ class TempleGateScreen(Screen):
         last_date = settings.get("last_cosmic_event_date", None)
 
         if last_date != today_str:
-            # Choose a random event
             cosmic_event = random.choice(self.cosmic_events)
-            # Insert it above the menu
             old_content = gate_text.renderable
             new_content = f"**Cosmic Event [{today_str}]:** {cosmic_event}\n\n{old_content}"
             gate_text.update(new_content)
 
-            # Update settings
             settings["last_cosmic_event_date"] = today_str
             save_settings(settings)
 
@@ -116,25 +112,28 @@ class TempleGateScreen(Screen):
         self.app.pop_screen()
 
     def action_cycle_theme(self) -> None:
-        """Cycle through available themes."""
-        from app.themes import THEMES
-
+        """
+        Cycle through available themes by updating app.current_theme_name
+        and app.cosmic_theme, then re-render.
+        """
         theme_names = list(THEMES.keys())
-        current_index = theme_names.index(self.app.theme["name"])
+        current_index = theme_names.index(self.app.current_theme_name)
         next_index = (current_index + 1) % len(theme_names)
         next_theme_name = theme_names[next_index]
 
         self.app.set_theme(next_theme_name)
-        # Force re-mount so background/foreground updates
+        # Force re-render of the screen so background/foreground updates
         self.refresh()
         self.on_mount()
 
 
-# -------------- MISSIONS SCREEN --------------
+# ------------ MISSIONS SCREEN ------------
 class MissionsScreen(Screen):
-    """Displays the user's missions with ability to toggle completion."""
+    """
+    Displays the user's missions with ability to toggle completion.
+    """
 
-    # We bind numeric keys to toggle missions, up to 9 for simplicity
+    # We bind numeric keys to toggle missions
     BINDINGS = [
         Binding("b", "pop_screen", "Go back"),
         Binding("1", "toggle_mission(1)", "Toggle mission #1"),
@@ -148,22 +147,19 @@ class MissionsScreen(Screen):
         Binding("9", "toggle_mission(9)", "Toggle mission #9"),
     ]
 
-    notification: var[str] = var("")  # store any ephemeral message
+    notification: var[str] = var("")
 
     def __init__(self):
         super().__init__()
         self.missions = load_missions()
-
-        # If no data file existed, we might initialize with defaults.
+        # If no data file existed, initialize with defaults
         if not self.missions:
-            # Create some sample missions
             default_missions = [
                 Mission("Stardust Fitness", "Run for 30 minutes"),
                 Mission("Galaxy Brain Coding", "Complete a coding tutorial"),
-                Mission("Astral Reading", "Read 20 pages of a science/philosophy book"),
+                Mission("Astral Reading", "Read 20 pages of science/philosophy"),
             ]
-            for m in default_missions:
-                self.missions.append(m)
+            self.missions.extend(default_missions)
             save_missions(self.missions)
 
     def compose(self) -> ComposeResult:
@@ -189,8 +185,8 @@ class MissionsScreen(Screen):
     def on_mount(self) -> None:
         app = self.app
         missions_text = self.query_one("#missions_text", Static)
-        missions_text.styles.background = app.theme["background"]
-        missions_text.styles.color = app.theme["foreground"]
+        missions_text.styles.background = app.cosmic_theme["background"]
+        missions_text.styles.color = app.cosmic_theme["foreground"]
         missions_text.styles.bold = True
 
     def action_pop_screen(self) -> None:
@@ -201,17 +197,18 @@ class MissionsScreen(Screen):
         if 0 <= idx < len(self.missions):
             self.missions[idx].completed = not self.missions[idx].completed
             save_missions(self.missions)
-            # If completed, post a message
             if self.missions[idx].completed:
                 self.notification = f"Mission '{self.missions[idx].title}' completed!"
             else:
-                self.notification = f"Mission '{self.missions[idx].title}' is now pending."
+                self.notification = f"Mission '{self.missions[idx].title}' is pending now."
             self.refresh()
 
 
-# -------------- SKILL TREES SCREEN --------------
+# ------------ SKILL TREES SCREEN ------------
 class SkillTreesScreen(Screen):
-    """Displays user's skill trees with ability to 'level up' a skill."""
+    """
+    Displays user's skill trees with ability to 'level up' a skill.
+    """
 
     BINDINGS = [
         Binding("b", "pop_screen", "Go back"),
@@ -226,15 +223,14 @@ class SkillTreesScreen(Screen):
     def __init__(self):
         super().__init__()
         self.skills = load_skills()
-        # If none, initialize defaults
+        # If none, initialize with defaults
         if not self.skills:
             default_skills = [
                 Skill("Fitness", level=1, progress=20),
                 Skill("Coding", level=2, progress=50),
                 Skill("Writing", level=1, progress=10),
             ]
-            for s in default_skills:
-                self.skills.append(s)
+            self.skills.extend(default_skills)
             save_skills(self.skills)
 
     def compose(self) -> ComposeResult:
@@ -249,7 +245,7 @@ class SkillTreesScreen(Screen):
                 f"{i}. {skill.name} - Level {skill.level} ({skill.progress}% progress)"
             )
 
-        text_lines.append("\nPress a number key (1-4) to 'Level Up' a skill.")
+        text_lines.append("\nPress a number key (1-4) to level up a skill.")
         text_lines.append("Press [b] to go back.")
 
         if self.notification:
@@ -260,8 +256,8 @@ class SkillTreesScreen(Screen):
     def on_mount(self) -> None:
         app = self.app
         st_text = self.query_one("#skill_trees_text", Static)
-        st_text.styles.background = app.theme["background"]
-        st_text.styles.color = app.theme["foreground"]
+        st_text.styles.background = app.cosmic_theme["background"]
+        st_text.styles.color = app.cosmic_theme["foreground"]
         st_text.styles.bold = True
 
     def action_pop_screen(self) -> None:
@@ -281,9 +277,11 @@ class SkillTreesScreen(Screen):
             self.refresh()
 
 
-# -------------- ARTIFACTS SCREEN --------------
+# ------------ ARTIFACTS SCREEN ------------
 class ArtifactsScreen(Screen):
-    """Displays cosmic artifacts with ability to toggle 'collected'."""
+    """
+    Displays cosmic artifacts with ability to toggle 'collected'.
+    """
 
     BINDINGS = [
         Binding("b", "pop_screen", "Go back"),
@@ -298,15 +296,14 @@ class ArtifactsScreen(Screen):
     def __init__(self):
         super().__init__()
         self.artifacts = load_artifacts()
-        # If none, initialize defaults
+        # If none, initialize with defaults
         if not self.artifacts:
             default_artifacts = [
-                Artifact("Nebula Shard", False),
-                Artifact("Meteor Fragment", True),
-                Artifact("Star Cluster", False),
+                Artifact("Nebula Shard", collected=False),
+                Artifact("Meteor Fragment", collected=True),
+                Artifact("Star Cluster", collected=False),
             ]
-            for a in default_artifacts:
-                self.artifacts.append(a)
+            self.artifacts.extend(default_artifacts)
             save_artifacts(self.artifacts)
 
     def compose(self) -> ComposeResult:
@@ -331,8 +328,8 @@ class ArtifactsScreen(Screen):
     def on_mount(self) -> None:
         app = self.app
         art_text = self.query_one("#artifacts_text", Static)
-        art_text.styles.background = app.theme["background"]
-        art_text.styles.color = app.theme["foreground"]
+        art_text.styles.background = app.cosmic_theme["background"]
+        art_text.styles.color = app.cosmic_theme["foreground"]
         art_text.styles.bold = True
 
     def action_pop_screen(self) -> None:

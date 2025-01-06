@@ -1,0 +1,17 @@
+[
+  {
+    "name": "Fitness",
+    "level": 1,
+    "progress": 20
+  },
+  {
+    "name": "Coding",
+    "level": 2,
+    "progress": 50
+  },
+  {
+    "name": "Writing",
+    "level": 1,
+    "progress": 10
+  }
+]

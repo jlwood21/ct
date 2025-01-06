@@ -6,7 +6,6 @@ MISSIONS_FILE = "missions.json"
 SKILLS_FILE = "skills.json"
 ARTIFACTS_FILE = "artifacts.json"
 
-
 # ------------------ MISSIONS ------------------
 def load_missions() -> list[Mission]:
     if not os.path.exists(MISSIONS_FILE):
@@ -20,7 +19,6 @@ def save_missions(missions: list[Mission]) -> None:
     with open(MISSIONS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
-
 # ------------------ SKILLS --------------------
 def load_skills() -> list[Skill]:
     if not os.path.exists(SKILLS_FILE):
@@ -33,7 +31,6 @@ def save_skills(skills: list[Skill]) -> None:
     data = [s.__dict__ for s in skills]
     with open(SKILLS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
-
 
 # ------------------ ARTIFACTS -----------------
 def load_artifacts() -> list[Artifact]:

@@ -1,0 +1,17 @@
+[
+  {
+    "title": "Stardust Fitness",
+    "description": "Run for 30 minutes",
+    "completed": false
+  },
+  {
+    "title": "Galaxy Brain Coding",
+    "description": "Complete a coding tutorial",
+    "completed": true
+  },
+  {
+    "title": "Astral Reading",
+    "description": "Read 20 pages of science/philosophy",
+    "completed": true
+  }
+]

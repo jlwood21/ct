@@ -10,7 +10,7 @@ class Mission:
 class Skill:
     name: str
     level: int = 1
-    progress: int = 0  # percentage (0-100)
+    progress: int = 0  # 0-100
 
 @dataclass
 class Artifact:

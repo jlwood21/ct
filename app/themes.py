@@ -2,21 +2,21 @@ THEMES = {
     "default": {
         "name": "default",
         "background": "black",
-        "foreground": "white"
+        "foreground": "white",
     },
     "stardust": {
         "name": "stardust",
         "background": "black",
-        "foreground": "magenta"
+        "foreground": "magenta",
     },
     "nebula": {
         "name": "nebula",
         "background": "blue",
-        "foreground": "white"
+        "foreground": "white",
     },
     "aurora": {
         "name": "aurora",
         "background": "green",
-        "foreground": "black"
+        "foreground": "black",
     },
 }
