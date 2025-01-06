@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import datetime
 
 @dataclass
 class Mission:
@@ -16,3 +17,19 @@ class Skill:
 class Artifact:
     name: str
     collected: bool = False
+
+@dataclass
+class Reflection:
+    date: str  # "YYYY-MM-DD"
+    content: str
+
+@dataclass
+class Challenge:
+    title: str
+    deadline: str   # "YYYY-MM-DD"
+    progress: int
+    goal: int
+
+@dataclass
+class Profile:
+    name: str

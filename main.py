@@ -2,7 +2,10 @@ from textual.app import App, ComposeResult
 from textual.widgets import Static
 from textual.binding import Binding
 
-from app.screens import TempleGateScreen
+from app.screens import (
+    TempleGateScreen,
+    fade_transition,
+)
 from app.settings_manager import load_settings, save_settings
 from app.themes import THEMES
 
@@ -20,7 +23,6 @@ class CosmicTempleApp(App):
         # Load user settings (if any)
         loaded = load_settings()
         self.current_theme_name = loaded.get("theme", "default")
-        # Use self.cosmic_theme to avoid conflict with Textual's theme
         self.cosmic_theme = THEMES.get(self.current_theme_name, THEMES["default"])
 
     def compose(self) -> ComposeResult:
@@ -50,8 +52,9 @@ Press [ENTER] to open The Temple Gate.
         banner.styles.color = self.cosmic_theme["foreground"]
         banner.styles.bold = True
 
-    def action_goto_temple_gate(self) -> None:
-        """Push the Temple Gate screen."""
+    async def action_goto_temple_gate(self) -> None:
+        """Push the Temple Gate screen with a fade transition."""
+        await fade_transition(self)
         self.push_screen(TempleGateScreen())
 
     def set_theme(self, theme_name: str) -> None:
