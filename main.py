@@ -6,7 +6,9 @@ from textual.app import App, ComposeResult
 from textual.widgets import Static
 from textual.binding import Binding
 
-from app.screens import TempleGateScreen, fade_transition
+from app.screens import (
+    TempleGateScreen, fade_transition
+)
 from app.settings_manager import load_settings, save_settings
 from app.themes import THEMES
 
@@ -32,7 +34,7 @@ Booting CosmicTemple OS... Please stand by.
 
 
 class CosmicTempleApp(App):
-    """A retro cosmic TUI app with extended TempleOS-style features."""
+    """A retro cosmic TUI app with TempleOS-style aesthetics and extended features."""
 
     BINDINGS = [
         Binding("enter", "goto_temple_gate", "Open Temple Gate"),
@@ -49,7 +51,6 @@ class CosmicTempleApp(App):
         self.cosmic_theme = THEMES.get(self.current_theme_name, THEMES["default"])
 
     def compose(self) -> ComposeResult:
-        # Banner after the splash
         banner_text = r"""
    ________  _________  ________  ___  ___          
   |\   ___ \|\___   ___\\   __  \|\  \|\  \         
@@ -67,21 +68,22 @@ Press [ENTER] to open The Temple Gate.
         yield banner
 
     def on_mount(self) -> None:
+        """Style the banner using our cosmic_theme dictionary."""
         banner = self.query_one("#banner", Static)
         banner.styles.background = self.cosmic_theme["background"]
         banner.styles.color = self.cosmic_theme["foreground"]
         banner.styles.bold = True
 
     async def action_goto_temple_gate(self) -> None:
+        """Fade transition to Temple Gate."""
         await fade_transition(self)
         self.push_screen(TempleGateScreen())
 
     def set_theme(self, theme_name: str) -> None:
         """Switch theme and save."""
-        from app.settings_manager import load_settings, save_settings
+        settings = load_settings()
         self.current_theme_name = theme_name
         self.cosmic_theme = THEMES.get(theme_name, THEMES["default"])
-        settings = load_settings()
         settings["theme"] = theme_name
         save_settings(settings)
 

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import List
 
 @dataclass
 class Mission:
@@ -34,3 +35,14 @@ class Profile:
     name: str
     title: str = "Stargazer"
     avatar_color: str = "white"
+
+@dataclass
+class Badge:
+    title: str
+    description: str
+
+@dataclass
+class Quest:
+    name: str
+    tasks: List[str]
+    completed: bool = False
