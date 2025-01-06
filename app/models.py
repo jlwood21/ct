@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import datetime
 
 @dataclass
 class Mission:
@@ -11,7 +10,7 @@ class Mission:
 class Skill:
     name: str
     level: int = 1
-    progress: int = 0  # 0-100
+    progress: int = 0
 
 @dataclass
 class Artifact:
@@ -20,16 +19,18 @@ class Artifact:
 
 @dataclass
 class Reflection:
-    date: str  # "YYYY-MM-DD"
+    date: str
     content: str
 
 @dataclass
 class Challenge:
     title: str
-    deadline: str   # "YYYY-MM-DD"
+    deadline: str
     progress: int
     goal: int
 
 @dataclass
 class Profile:
     name: str
+    title: str = "Stargazer"
+    avatar_color: str = "white"

@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import random
+import os
 
 from textual.screen import Screen
 from textual.widgets import Static, Input
@@ -18,10 +19,12 @@ from app.data_manager import (
     load_artifacts, save_artifacts,
     load_reflections, save_reflections,
     load_challenges, save_challenges,
-    load_profile, save_profile
+    load_profile, save_profile,
+    load_lore_snippets, load_oracles
 )
 from app.settings_manager import load_settings, save_settings
 from app.themes import THEMES
+
 
 # -------------- ASCII FADE TRANSITION --------------
 async def fade_transition(app):
@@ -29,21 +32,29 @@ async def fade_transition(app):
     A quick fade-like transition in ASCII to emulate
     old-school look, purely CPU-based, no GPU.
     """
-    # We'll invert the screen a few times or print random stars, etc.
-    for i in range(6):
-        # Invert or random star
-        if i % 2 == 0:
-            app.console.print("\033[7m" + " " * 80 + "\033[0m")  # invert one line
+    for _ in range(6):
+        if random.random() < 0.5:
+            app.console.print("\033[7m" + " " * 80 + "\033[0m")
         else:
             row = "".join(random.choice([" ", "*"]) for _ in range(60))
             app.console.print(row)
         await asyncio.sleep(0.05)
 
+
+# -------------- HELPER: BEEP --------------
+def beep():
+    """
+    Emit a console beep, if supported by the terminal.
+    Alternatively, on macOS, you could do:
+    os.system('afplay beep.wav')
+    """
+    print("\a")
+
+
 # -------------- TEMPLE GATE SCREEN --------------
 class TempleGateScreen(Screen):
     """
-    The main menu with options for Missions, Skill Trees, Artifacts,
-    plus the new features: Creative Sandbox, Daily Reflection, Scoreboard, Challenges, Profile.
+    Adds daily "Lore Snippets" and the regular nav.
     """
 
     BINDINGS = [
@@ -57,13 +68,6 @@ class TempleGateScreen(Screen):
         Binding("8", "goto_profile", "Profile"),
         Binding("t", "cycle_theme", "Cycle Theme"),
         Binding("b", "pop_screen", "Go back"),
-    ]
-
-    cosmic_events = [
-        "A solar flare ignites your determination.",
-        "Cosmic winds blow fresh ideas your way.",
-        "A meteor shower of creativity streaks across your mind.",
-        "The alignment of distant stars fuels your ambition.",
     ]
 
     def compose(self) -> ComposeResult:
@@ -89,20 +93,22 @@ class TempleGateScreen(Screen):
     def on_mount(self) -> None:
         gate_text = self.query_one("#temple_gate_text", Static)
         app = self.app
-
         gate_text.styles.background = app.cosmic_theme["background"]
         gate_text.styles.color = app.cosmic_theme["foreground"]
         gate_text.styles.bold = True
 
+        # Daily cosmic event snippet
         today_str = datetime.date.today().isoformat()
         settings = load_settings()
         last_date = settings.get("last_cosmic_event_date", None)
 
         if last_date != today_str:
-            cosmic_event = random.choice(self.cosmic_events)
-            old_content = gate_text.renderable
-            new_content = f"**Cosmic Event [{today_str}]:** {cosmic_event}\n\n{old_content}"
-            gate_text.update(new_content)
+            lore = load_lore_snippets()
+            if lore:
+                snippet = random.choice(lore)
+                old_content = gate_text.renderable
+                new_content = f"**Daily Lore [{today_str}]:** {snippet}\n\n{old_content}"
+                gate_text.update(new_content)
 
             settings["last_cosmic_event_date"] = today_str
             save_settings(settings)
@@ -147,19 +153,21 @@ class TempleGateScreen(Screen):
         current_index = theme_names.index(self.app.current_theme_name)
         next_index = (current_index + 1) % len(theme_names)
         next_theme_name = theme_names[next_index]
-
         self.app.set_theme(next_theme_name)
         self.refresh()
         self.on_mount()
 
 
-# -------------- MISSIONS SCREEN --------------
+# -------------- MISSIONS SCREEN (Streak + Oracle) --------------
 class MissionsScreen(Screen):
     """
-    Displays the user's missions with ability to toggle completion.
+    Displays the user's missions with ability to toggle completion,
+    press 'o' for an oracle tip, track daily streak if at least 1 mission done.
     """
+
     BINDINGS = [
         Binding("b", "pop_screen", "Go back"),
+        Binding("o", "oracle_tip", "Get Oracle Tip"),
         Binding("1", "toggle_mission(1)", "Toggle mission #1"),
         Binding("2", "toggle_mission(2)", "Toggle mission #2"),
         Binding("3", "toggle_mission(3)", "Toggle mission #3"),
@@ -176,7 +184,6 @@ class MissionsScreen(Screen):
     def __init__(self):
         super().__init__()
         self.missions = load_missions()
-        # If no data file existed, initialize with defaults
         if not self.missions:
             default_missions = [
                 Mission("Stardust Fitness", "Run for 30 minutes"),
@@ -197,8 +204,7 @@ class MissionsScreen(Screen):
             status = "[X]" if mission.completed else "[ ]"
             text_lines.append(f"{i}. {status} {mission.title} - {mission.description}")
 
-        text_lines.append("\nPress [b] to go back.")
-        text_lines.append("Press a number key (1-9) to toggle mission completion.")
+        text_lines.append("\nPress [o] for an Oracle Tip. Press number keys (1-9) to toggle a mission. Press [b] to go back.")
 
         if self.notification:
             text_lines.append(f"\n[NOTIFICATION] {self.notification}")
@@ -216,24 +222,61 @@ class MissionsScreen(Screen):
     def action_pop_screen(self) -> None:
         self.app.pop_screen()
 
+    def action_oracle_tip(self) -> None:
+        oracles = load_oracles()
+        if oracles and "missions" in oracles:
+            tip = random.choice(oracles["missions"])
+            self.notification = f"Oracle says: {tip}"
+        else:
+            self.notification = "No oracles available for Missions!"
+        self.refresh()
+
     def action_toggle_mission(self, number: str) -> None:
         idx = int(number) - 1
         if 0 <= idx < len(self.missions):
             self.missions[idx].completed = not self.missions[idx].completed
             save_missions(self.missions)
+
+            # If completed, beep & set daily mission streak
             if self.missions[idx].completed:
+                beep()
                 self.notification = f"Mission '{self.missions[idx].title}' completed!"
+                self.update_mission_streak()
             else:
                 self.notification = f"Mission '{self.missions[idx].title}' is pending now."
+
             self.refresh()
 
+    def update_mission_streak(self):
+        # If user completes at least 1 mission on a given day, that day counts
+        settings = load_settings()
+        today = datetime.date.today().isoformat()
+        last_mission_day = settings.get("last_mission_day", None)
+        mission_streak = settings.get("mission_streak", 0)
 
-# -------------- SKILL TREES SCREEN --------------
+        if last_mission_day == today:
+            # Already counted a mission today
+            pass
+        else:
+            # Next consecutive day or reset
+            if last_mission_day is not None:
+                # Check if yesterday was last day
+                yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+                if yesterday == last_mission_day:
+                    mission_streak += 1
+                else:
+                    mission_streak = 1
+            else:
+                mission_streak = 1
+
+        settings["mission_streak"] = mission_streak
+        settings["last_mission_day"] = today
+        save_settings(settings)
+        self.notification += f" (Mission Streak: {mission_streak} days)"
+
+
+# -------------- SKILL TREES SCREEN (Beep on Level Up) --------------
 class SkillTreesScreen(Screen):
-    """
-    Displays user's skill trees with ability to 'level up' a skill.
-    """
-
     BINDINGS = [
         Binding("b", "pop_screen", "Go back"),
         Binding("1", "level_up_skill(1)", "Level up skill #1"),
@@ -241,7 +284,6 @@ class SkillTreesScreen(Screen):
         Binding("3", "level_up_skill(3)", "Level up skill #3"),
         Binding("4", "level_up_skill(4)", "Level up skill #4"),
     ]
-
     notification: var[str] = var("")
 
     def __init__(self):
@@ -264,12 +306,9 @@ class SkillTreesScreen(Screen):
             "",
         ]
         for i, skill in enumerate(self.skills, start=1):
-            text_lines.append(
-                f"{i}. {skill.name} - Level {skill.level} ({skill.progress}% progress)"
-            )
+            text_lines.append(f"{i}. {skill.name} - Level {skill.level} ({skill.progress}% progress)")
 
-        text_lines.append("\nPress a number key (1-4) to level up a skill.")
-        text_lines.append("Press [b] to go back.")
+        text_lines.append("\nPress [1-4] to 'level up' a skill. [b] to go back.")
 
         if self.notification:
             text_lines.append(f"\n[NOTIFICATION] {self.notification}")
@@ -293,6 +332,7 @@ class SkillTreesScreen(Screen):
             if self.skills[idx].progress >= 100:
                 self.skills[idx].level += 1
                 self.skills[idx].progress = 0
+                beep()  # beep on level up
                 self.notification = f"Skill '{self.skills[idx].name}' leveled up!"
             else:
                 self.notification = f"Skill '{self.skills[idx].name}' progress +25%"
@@ -302,10 +342,6 @@ class SkillTreesScreen(Screen):
 
 # -------------- ARTIFACTS SCREEN --------------
 class ArtifactsScreen(Screen):
-    """
-    Displays cosmic artifacts with ability to toggle 'collected'.
-    """
-
     BINDINGS = [
         Binding("b", "pop_screen", "Go back"),
         Binding("1", "toggle_artifact(1)", "Toggle artifact #1"),
@@ -313,7 +349,6 @@ class ArtifactsScreen(Screen):
         Binding("3", "toggle_artifact(3)", "Toggle artifact #3"),
         Binding("4", "toggle_artifact(4)", "Toggle artifact #4"),
     ]
-
     notification: var[str] = var("")
 
     def __init__(self):
@@ -339,8 +374,7 @@ class ArtifactsScreen(Screen):
             status = "[COLLECTED]" if artifact.collected else "[UNCOLLECTED]"
             text_lines.append(f"{i}. {status} {artifact.name}")
 
-        text_lines.append("\nPress a number key (1-4) to toggle an artifact's status.")
-        text_lines.append("Press [b] to go back.")
+        text_lines.append("\nPress [1-4] to toggle an artifact. [b] to go back.")
 
         if self.notification:
             text_lines.append(f"\n[NOTIFICATION] {self.notification}")
@@ -362,6 +396,7 @@ class ArtifactsScreen(Screen):
         if 0 <= idx < len(self.artifacts):
             self.artifacts[idx].collected = not self.artifacts[idx].collected
             if self.artifacts[idx].collected:
+                beep()
                 self.notification = f"Artifact '{self.artifacts[idx].name}' is now collected!"
             else:
                 self.notification = f"Artifact '{self.artifacts[idx].name}' is now uncollected."
@@ -369,12 +404,10 @@ class ArtifactsScreen(Screen):
             self.refresh()
 
 
-# -------------- CREATIVE SANDBOX SCREEN (Step 32) --------------
+# -------------- CREATIVE SANDBOX SCREEN --------------
 class CreativeSandboxScreen(Screen):
     """
-    A free-form text area for brainstorming or journaling.
-    No networking or AI calls (step 33 is skipped).
-    Press s to save content, b to go back.
+    Single-line input due to older Textual constraints. Press s to save, b to go back.
     """
 
     BINDINGS = [
@@ -391,8 +424,10 @@ class CreativeSandboxScreen(Screen):
         ]
         yield Static("\n".join(lines), id="sandbox_header")
 
-        # Multi-line text input
-        self.input_widget = Input(placeholder="Type your cosmic ideas here...", id="sandbox_input", multiline=True)
+        self.input_widget = Input(
+            placeholder="Type your cosmic ideas here...",
+            id="sandbox_input"
+        )
         yield self.input_widget
 
     def on_mount(self) -> None:
@@ -402,32 +437,25 @@ class CreativeSandboxScreen(Screen):
         sandbox_header.styles.color = app.cosmic_theme["foreground"]
         sandbox_header.styles.bold = True
 
-        # We can load existing content from a file, if desired (optional).
-        # For now, we won't store it permanently unless user saves manually.
-
     def action_pop_screen(self) -> None:
         self.app.pop_screen()
 
     def action_save_content(self) -> None:
         content = self.input_widget.value
-        # Save to a local file, e.g. "sandbox.txt"
         with open("sandbox.txt", "w", encoding="utf-8") as f:
             f.write(content)
-        # We can display a small success message in the console or refresh the UI
-        self.query_one("#sandbox_header", Static).update("Content saved to sandbox.txt!")
+        self.query_one("#sandbox_header", Static).update(
+            "Content saved to sandbox.txt!"
+        )
 
 
-# -------------- DAILY REFLECTION SCREEN (Step 34) --------------
+# -------------- DAILY REFLECTION SCREEN (Streak logic) --------------
 class ReflectionScreen(Screen):
-    """
-    A screen for daily reflections. Stores a reflection in reflections.json
-    keyed by date. Press r to record, b to go back.
-    """
-
     BINDINGS = [
         Binding("b", "pop_screen", "Go back"),
         Binding("r", "record_reflection", "Record Today's Reflection"),
     ]
+    notification: var[str] = var("")
 
     def compose(self) -> ComposeResult:
         text_lines = [
@@ -437,11 +465,11 @@ class ReflectionScreen(Screen):
             "",
             "What went well today?",
             "What cosmic insight did you discover?",
-            "Press [r] when done, [b] to go back."
+            "Press [r] to record, [b] to go back."
         ]
         yield Static("\n".join(text_lines), id="reflection_header")
 
-        self.reflection_input = Input(placeholder="Type your reflection here...", multiline=True, id="reflection_input")
+        self.reflection_input = Input(placeholder="Type your reflection here...", id="reflection_input")
         yield self.reflection_input
 
     def on_mount(self) -> None:
@@ -457,28 +485,50 @@ class ReflectionScreen(Screen):
     def action_record_reflection(self) -> None:
         content = self.reflection_input.value.strip()
         if content:
-            new_reflection = Reflection(datetime.date.today().isoformat(), content)
+            new_reflection_date = datetime.date.today().isoformat()
             reflections = load_reflections()
-            # Overwrite any existing reflection for the day
-            # Or you could append if you wanted multiple entries
-            # For now, let's do a simple dictionary approach
-            # We'll see in data_manager
-            reflections[new_reflection.date] = new_reflection.content
+            reflections[new_reflection_date] = content
             save_reflections(reflections)
-            self.query_one("#reflection_header", Static).update("Reflection saved!")
+            self.notification = "Reflection saved!"
+            # Update reflection streak
+            self.update_reflection_streak()
         else:
-            self.query_one("#reflection_header", Static).update("No content to save. Write something cosmic.")
+            self.notification = "No content to save. Write something cosmic."
+        self.refresh()
+
+    def update_reflection_streak(self):
+        settings = load_settings()
+        today = datetime.date.today().isoformat()
+        last_reflect_day = settings.get("last_reflect_day", None)
+        reflect_streak = settings.get("reflect_streak", 0)
+
+        if last_reflect_day == today:
+            # Already reflected today
+            pass
+        else:
+            # Next consecutive or reset
+            if last_reflect_day is not None:
+                yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+                if yesterday == last_reflect_day:
+                    reflect_streak += 1
+                else:
+                    reflect_streak = 1
+            else:
+                reflect_streak = 1
+
+        settings["reflect_streak"] = reflect_streak
+        settings["last_reflect_day"] = today
+        save_settings(settings)
+        self.notification += f" (Reflection Streak: {reflect_streak} days)"
 
 
-# -------------- COSMIC SCOREBOARD SCREEN (Step 35) --------------
+# -------------- COSMIC SCOREBOARD (Animated ASCII Constellation) --------------
 class ScoreboardScreen(Screen):
-    """
-    Shows daily/weekly stats: how many Missions completed, Skills leveled, etc.
-    """
-
     BINDINGS = [
         Binding("b", "pop_screen", "Go back"),
+        Binding("c", "draw_constellation", "Animate Constellation"),
     ]
+    notification: var[str] = var("")
 
     def compose(self) -> ComposeResult:
         text_lines = [
@@ -487,19 +537,13 @@ class ScoreboardScreen(Screen):
             "****************************",
             "",
         ]
-        # We'll gather data from missions, skills, artifacts
         missions = load_missions()
         skills = load_skills()
         artifacts = load_artifacts()
 
-        # Basic stats
         completed_missions = sum(1 for m in missions if m.completed)
         total_missions = len(missions)
-
-        # Count how many skill level ups in total or how many are above level 1
         total_levels = sum(s.level for s in skills)
-
-        # Count how many artifacts are collected
         collected_artifacts = sum(1 for a in artifacts if a.collected)
         total_artifacts = len(artifacts)
 
@@ -507,31 +551,69 @@ class ScoreboardScreen(Screen):
         text_lines.append(f"Total Skill Levels Combined: {total_levels}")
         text_lines.append(f"Artifacts Collected: {collected_artifacts}/{total_artifacts}")
 
-        text_lines.append("\nPress [b] to go back.")
+        # Also show streaks from settings
+        settings = load_settings()
+        mission_streak = settings.get("mission_streak", 0)
+        reflect_streak = settings.get("reflect_streak", 0)
+        text_lines.append(f"Mission Streak: {mission_streak} days")
+        text_lines.append(f"Reflection Streak: {reflect_streak} days")
+
+        text_lines.append("\nPress [c] to view a cosmic constellation animation. [b] to go back.")
 
         yield Static("\n".join(text_lines), id="scoreboard_text")
 
+        # We'll also place a second widget for the constellation
+        self.constellation_box = Static("", id="constellation_box")
+        yield self.constellation_box
+
     def on_mount(self) -> None:
-        app = self.app
         sb_text = self.query_one("#scoreboard_text", Static)
-        sb_text.styles.background = app.cosmic_theme["background"]
-        sb_text.styles.color = app.cosmic_theme["foreground"]
+        sb_text.styles.background = self.app.cosmic_theme["background"]
+        sb_text.styles.color = self.app.cosmic_theme["foreground"]
         sb_text.styles.bold = True
+
+        box = self.query_one("#constellation_box", Static)
+        box.styles.background = self.app.cosmic_theme["background"]
+        box.styles.color = self.app.cosmic_theme["foreground"]
+        box.styles.bold = False
 
     def action_pop_screen(self) -> None:
         self.app.pop_screen()
 
+    async def action_draw_constellation(self) -> None:
+        # Simple ASCII star drawing
+        box = self.query_one("#constellation_box", Static)
+        lines = [
+            "         *      .     ",
+            "      .       *    .  ",
+            "   *     .      *      ",
+            "       .    *    .     ",
+            "  .     *           *   ",
+        ]
+        rendered = ""
+        for ln in lines:
+            rendered += ln + "\n"
+            box.update(rendered)
+            await asyncio.sleep(0.3)
 
-# -------------- CHALLENGES SCREEN (Step 36) --------------
+        # Optionally connect them with lines (just ASCII)
+        connect_lines = [
+            "         *------.     ",
+            "      .------*    .   ",
+            "   *----- .    -----  ",
+        ]
+        for ln in connect_lines:
+            rendered += ln + "\n"
+            box.update(rendered)
+            await asyncio.sleep(0.3)
+
+
+# -------------- CHALLENGES SCREEN (Temple Oracles) --------------
 class ChallengesScreen(Screen):
-    """
-    Shows limited-time challenges: e.g., 'Complete 3 Missions in 2 days.'
-    The user can create new challenges or mark them as done. 
-    """
-
     BINDINGS = [
         Binding("b", "pop_screen", "Go back"),
         Binding("n", "new_challenge", "New Challenge"),
+        Binding("o", "oracle_tip", "Get Oracle Tip"),
         Binding("1", "toggle_challenge(1)", "Toggle challenge #1"),
         Binding("2", "toggle_challenge(2)", "Toggle challenge #2"),
         Binding("3", "toggle_challenge(3)", "Toggle challenge #3"),
@@ -542,7 +624,6 @@ class ChallengesScreen(Screen):
     def __init__(self):
         super().__init__()
         self.challenges = load_challenges()
-        # If no data, we might create a default challenge
         if not self.challenges:
             example = Challenge("Complete 2 Missions", (datetime.date.today() + datetime.timedelta(days=2)).isoformat(), 0, 2)
             self.challenges.append(example)
@@ -555,7 +636,8 @@ class ChallengesScreen(Screen):
             "****************************",
             "",
             "Press [n] to add a new challenge.",
-            "Press [1], [2], [3]... to increment progress or mark done.",
+            "Press [1-3] to increment progress or mark done.",
+            "Press [o] for an Oracle Tip.",
         ]
         for i, ch in enumerate(self.challenges, start=1):
             deadline_str = ch.deadline
@@ -566,57 +648,72 @@ class ChallengesScreen(Screen):
         if self.notification:
             text_lines.append(f"\n[NOTIFICATION] {self.notification}")
 
-        text_lines.append("\nPress [b] to go back.")
+        text_lines.append("\n[b] to go back.")
         yield Static("\n".join(text_lines), id="challenges_text")
 
     def on_mount(self) -> None:
-        app = self.app
         ch_text = self.query_one("#challenges_text", Static)
-        ch_text.styles.background = app.cosmic_theme["background"]
-        ch_text.styles.color = app.cosmic_theme["foreground"]
+        ch_text.styles.background = self.app.cosmic_theme["background"]
+        ch_text.styles.color = self.app.cosmic_theme["foreground"]
         ch_text.styles.bold = True
 
     def action_pop_screen(self) -> None:
         self.app.pop_screen()
 
+    def action_new_challenge(self) -> None:
+        new_c = Challenge("New Challenge", (datetime.date.today() + datetime.timedelta(days=3)).isoformat(), 0, 3)
+        self.challenges.append(new_c)
+        save_challenges(self.challenges)
+        self.notification = "Added a new challenge. Press number keys to increment progress."
+        self.refresh()
+
     def action_toggle_challenge(self, number: str) -> None:
         idx = int(number) - 1
         if 0 <= idx < len(self.challenges):
-            # Increment progress by 1 for demonstration
             self.challenges[idx].progress += 1
             if self.challenges[idx].progress >= self.challenges[idx].goal:
+                beep()
                 self.notification = f"Challenge '{self.challenges[idx].title}' completed!"
             else:
                 self.notification = f"Challenge '{self.challenges[idx].title}' progress {self.challenges[idx].progress}/{self.challenges[idx].goal}"
             save_challenges(self.challenges)
             self.refresh()
 
-    def action_new_challenge(self) -> None:
-        # Minimal: create a new challenge with placeholder
-        new_c = Challenge("New Challenge", (datetime.date.today() + datetime.timedelta(days=3)).isoformat(), 0, 3)
-        self.challenges.append(new_c)
-        save_challenges(self.challenges)
-        self.notification = "Added a new challenge (placeholder). Press number keys to increment progress."
+    def action_oracle_tip(self) -> None:
+        oracles = load_oracles()
+        if oracles and "challenges" in oracles:
+            tip = random.choice(oracles["challenges"])
+            self.notification = f"Oracle says: {tip}"
+        else:
+            self.notification = "No oracles available for Challenges!"
         self.refresh()
 
 
-# -------------- PROFILE SCREEN (Step 38) --------------
+# -------------- PROFILE SCREEN (Titles / Avatars) --------------
 class ProfileScreen(Screen):
     """
-    Allows customizing user name (cosmic moniker), stored in profile.json.
+    Allows customizing user name, plus picking a cosmic title or avatar color.
+    Press 'n' to cycle titles, 'a' to cycle avatar colors, 's' to save.
     """
 
     BINDINGS = [
         Binding("b", "pop_screen", "Go back"),
+        Binding("n", "next_title", "Next Title"),
+        Binding("a", "next_avatar", "Next Avatar"),
         Binding("s", "save_profile", "Save Profile"),
     ]
+
+    titles = ["Stargazer", "Nova Runner", "Comet Shaman", "Celestial Alchemist"]
+    avatar_colors = ["red", "green", "blue", "yellow", "magenta", "cyan", "white"]
+
+    notification: var[str] = var("")
 
     def __init__(self):
         super().__init__()
         self.profile = load_profile()
         if not self.profile:
             # Default
-            self.profile = Profile("Stargazer")  # default name
+            self.profile = Profile("Stargazer", title="Comet Shaman", avatar_color="white")
             save_profile(self.profile)
 
     def compose(self) -> ComposeResult:
@@ -626,30 +723,56 @@ class ProfileScreen(Screen):
             "****************************",
             "",
             "Enter your cosmic moniker:",
-            "Press [s] to save, [b] to go back.",
+            "Press [n] to cycle Title, [a] to cycle Avatar color, [s] to save, [b] to go back.",
         ]
         yield Static("\n".join(lines), id="profile_header")
 
         self.name_input = Input(placeholder="e.g. Nova Runner", id="profile_name_input")
-        # Prefill with existing name
         self.name_input.value = self.profile.name
         yield self.name_input
 
+        self.title_static = Static(f"Title: {self.profile.title}", id="profile_title")
+        yield self.title_static
+
+        self.avatar_static = Static(f"Avatar Color: {self.profile.avatar_color}", id="profile_avatar")
+        yield self.avatar_static
+
     def on_mount(self) -> None:
-        app = self.app
         ph = self.query_one("#profile_header", Static)
-        ph.styles.background = app.cosmic_theme["background"]
-        ph.styles.color = app.cosmic_theme["foreground"]
+        ph.styles.background = self.app.cosmic_theme["background"]
+        ph.styles.color = self.app.cosmic_theme["foreground"]
         ph.styles.bold = True
+
+        self.query_one("#profile_title", Static).styles.background = self.app.cosmic_theme["background"]
+        self.query_one("#profile_title", Static).styles.color = self.app.cosmic_theme["foreground"]
+        self.query_one("#profile_avatar", Static).styles.background = self.app.cosmic_theme["background"]
+        self.query_one("#profile_avatar", Static).styles.color = self.profile.avatar_color
 
     def action_pop_screen(self) -> None:
         self.app.pop_screen()
+
+    def action_next_title(self) -> None:
+        idx = self.titles.index(self.profile.title) if self.profile.title in self.titles else 0
+        idx = (idx + 1) % len(self.titles)
+        self.profile.title = self.titles[idx]
+        self.query_one("#profile_title", Static).update(f"Title: {self.profile.title}")
+
+    def action_next_avatar(self) -> None:
+        idx = self.avatar_colors.index(self.profile.avatar_color) if self.profile.avatar_color in self.avatar_colors else 0
+        idx = (idx + 1) % len(self.avatar_colors)
+        self.profile.avatar_color = self.avatar_colors[idx]
+        self.query_one("#profile_avatar", Static).styles.color = self.profile.avatar_color
+        self.query_one("#profile_avatar", Static).update(f"Avatar Color: {self.profile.avatar_color}")
 
     def action_save_profile(self) -> None:
         name = self.name_input.value.strip()
         if name:
             self.profile.name = name
             save_profile(self.profile)
-            self.query_one("#profile_header", Static).update(f"Profile saved! Greetings, {name}.")
+            self.notification = f"Profile saved! Greetings, {self.profile.name} the {self.profile.title}."
         else:
-            self.query_one("#profile_header", Static).update("Please enter a valid name.")
+            self.notification = "Please enter a valid name."
+
+        header = self.query_one("#profile_header", Static)
+        header.update(f"Profile: {self.notification}")
+        self.refresh()

@@ -12,7 +12,8 @@ ARTIFACTS_FILE = "artifacts.json"
 REFLECTIONS_FILE = "reflections.json"
 CHALLENGES_FILE = "challenges.json"
 PROFILE_FILE = "profile.json"
-
+LORE_FILE = "lore.json"
+ORACLES_FILE = "oracles.json"
 
 # ------------------ MISSIONS ------------------
 def load_missions() -> list[Mission]:
@@ -56,8 +57,7 @@ def save_artifacts(artifacts: list[Artifact]) -> None:
         json.dump(data, f, indent=2)
 
 
-# ------------------ REFLECTIONS (Step 34) --------------
-# We'll store reflections as a dict: { "YYYY-MM-DD": "... content ..." }
+# ------------------ REFLECTIONS ----------------
 def load_reflections() -> dict:
     if not os.path.exists(REFLECTIONS_FILE):
         return {}
@@ -69,7 +69,7 @@ def save_reflections(reflections: dict) -> None:
         json.dump(reflections, f, indent=2)
 
 
-# ------------------ CHALLENGES (Step 36) --------------
+# ------------------ CHALLENGES ----------------
 def load_challenges() -> list[Challenge]:
     if not os.path.exists(CHALLENGES_FILE):
         return []
@@ -83,7 +83,7 @@ def save_challenges(challenges: list[Challenge]) -> None:
         json.dump(data, f, indent=2)
 
 
-# ------------------ PROFILE (Step 38) --------------
+# ------------------ PROFILE -------------------
 def load_profile() -> Profile | None:
     if not os.path.exists(PROFILE_FILE):
         return None
@@ -95,3 +95,29 @@ def save_profile(profile: Profile) -> None:
     data = profile.__dict__
     with open(PROFILE_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
+
+
+# ------------------ LORE & ORACLES -------------
+def load_lore_snippets() -> list[str]:
+    """Returns a list of daily lore strings from lore.json, or [] if none."""
+    if not os.path.exists(LORE_FILE):
+        return []
+    with open(LORE_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        # Expecting an array of strings
+        if isinstance(data, list):
+            return data
+        return []
+
+def load_oracles() -> dict:
+    """
+    oracles.json might have structure like:
+    {
+      "missions": ["tip1", "tip2"],
+      "challenges": ["tip3", "tip4"]
+    }
+    """
+    if not os.path.exists(ORACLES_FILE):
+        return {}
+    with open(ORACLES_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
